@@ -7,6 +7,8 @@ Based on Omarchy's built-in weather widget. The forecast popup, location
 picker, and data sources are the same; the bar pill shows **icon + temp**
 instead of the icon alone.
 
+![Tempest on the Omarchy bar, showing the condition icon and current temperature](preview.png)
+
 ## Install
 
 ```bash
