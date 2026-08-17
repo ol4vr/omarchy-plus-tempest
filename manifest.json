@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "unleashed-nick.tempest",
+  "name": "Tempest",
+  "version": "1.0.0",
+  "author": "unleashed-nick",
+  "license": "MIT",
+  "description": "Weather pill with the current temperature next to the condition icon",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Tempest",
+    "description": "Weather pill with the current temperature next to the condition icon",
+    "category": "Info",
+    "allowMultiple": false,
+    "defaultSection": "center",
+    "settingsForm": "weatherSettings"
+  }
+}
