@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "id": "unleashed-nick.tempest",
+  "id": "io.github.ol4vr.tempest",
   "name": "Tempest",
-  "version": "1.0.0",
-  "author": "unleashed-nick",
+  "version": "1.0.1",
+  "author": "Olav Rorvik (ol4vr)",
   "license": "MIT",
   "description": "Weather pill with the current temperature next to the condition icon",
   "kinds": [

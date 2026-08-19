@@ -3,16 +3,18 @@
 Weather for the [Omarchy](https://omarchy.org) bar, with the current temperature
 next to the condition icon.
 
-Based on Omarchy's built-in weather widget. The forecast popup, location
-picker, and data sources are the same; the bar pill shows **icon + temp**
-instead of the icon alone.
+Owned by [ol4vr](https://github.com/ol4vr) for Omarchy+. Based on Omarchy's
+built-in weather widget and forked from
+[unleashed-nick/omarchy-tempest](https://github.com/unleashed-nick/omarchy-tempest).
+The forecast popup, location picker, and data sources are unchanged; the bar
+pill shows **icon + temp** instead of the icon alone.
 
 ![Tempest on the Omarchy bar, showing the condition icon and current temperature](preview.png)
 
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/unleashed-nick/omarchy-tempest.git --enable
+omarchy plugin add https://github.com/ol4vr/omarchy-plus-tempest.git --enable
 omarchy plugin disable omarchy.weather
 ```
 
@@ -20,20 +22,20 @@ Disable stock weather or you will have two weather pills. The widget lands in
 the center of the bar. Move it if you want:
 
 ```bash
-omarchy bar move unleashed-nick.tempest --section center --after omarchy.clock
+omarchy bar move io.github.ol4vr.tempest --section center --after omarchy.clock
 ```
 
 ### Updating
 
 ```bash
-omarchy plugin update unleashed-nick.tempest
+omarchy plugin update io.github.ol4vr.tempest
 omarchy restart shell
 ```
 
 ### Removing it
 
 ```bash
-omarchy plugin remove unleashed-nick.tempest
+omarchy plugin remove io.github.ol4vr.tempest
 omarchy plugin enable omarchy.weather
 ```
 

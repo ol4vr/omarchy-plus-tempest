@@ -7,8 +7,8 @@ import "Model.js" as Model
 
 Panel {
   id: root
-  moduleName: "unleashed-nick.tempest"
-  ipcTarget: "unleashed-nick.tempest"
+  moduleName: "io.github.ol4vr.tempest"
+  ipcTarget: "io.github.ol4vr.tempest"
   manageIpc: false
 
   property var anchorItem: null

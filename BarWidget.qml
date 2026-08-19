@@ -4,7 +4,7 @@ import qs.Ui
 
 BarWidget {
   id: root
-  moduleName: "unleashed-nick.tempest"
+  moduleName: "io.github.ol4vr.tempest"
 
   function injectPanel() {
     var target = panelLoader.item
