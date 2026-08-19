@@ -1233,43 +1233,94 @@ Panel {
           }
         }
 
-        Rectangle {
-          visible: root.dayDetails.moonPhase !== ""
-          width: Style.space(448)
-          height: Style.space(48)
-          anchors.horizontalCenter: parent.horizontalCenter
-          radius: Math.min(8, Style.cornerRadius)
-          color: root.semanticFill("neutral")
+        Column {
+          visible: root.dayDetails.moonPhase !== "" || root.dayDetails.moonrise !== "" || root.dayDetails.moonset !== ""
+          width: parent.width
+          spacing: Style.space(8)
 
           Row {
-            anchors.fill: parent
-            anchors.leftMargin: Style.space(12)
-            anchors.rightMargin: Style.space(12)
-            spacing: Style.space(10)
+            anchors.left: parent.left
+            anchors.leftMargin: Style.space(20)
+            spacing: Style.space(8)
 
             Text {
-              anchors.verticalCenter: parent.verticalCenter
               text: ""
               color: Color.accent
               font.family: root.bar.fontFamily
               font.pixelSize: Style.font.title
             }
             Text {
-              anchors.verticalCenter: parent.verticalCenter
-              text: root.dayDetails.moonPhase.toUpperCase()
+              text: "MOON"
               color: root.bar.foreground
               font.family: root.bar.fontFamily
-              font.pixelSize: Style.font.body
+              font.pixelSize: Style.font.title
               font.bold: true
+              font.letterSpacing: 0.5
             }
             Text {
               anchors.verticalCenter: parent.verticalCenter
-              text: (root.dayDetails.moonrise ? ("RISE  " + root.dayDetails.moonrise) : "")
-                + (root.dayDetails.moonrise && root.dayDetails.moonset ? "    " : "")
-                + (root.dayDetails.moonset ? ("SET  " + root.dayDetails.moonset) : "")
-              color: Qt.darker(root.bar.foreground, 1.4)
+              text: root.dayDetails.moonPhase ? root.dayDetails.moonPhase.toUpperCase() : ""
+              color: Qt.darker(root.bar.foreground, 1.35)
               font.family: root.bar.fontFamily
               font.pixelSize: Style.font.caption
+              font.bold: true
+              font.letterSpacing: 0.5
+            }
+          }
+
+          Grid {
+            anchors.horizontalCenter: parent.horizontalCenter
+            columns: 2
+            columnSpacing: Style.space(12)
+
+            Repeater {
+              model: [
+                { icon: "", label: "MOONRISE", value: root.dayDetails.moonrise || "—" },
+                { icon: "", label: "MOONSET", value: root.dayDetails.moonset || "—" }
+              ]
+
+              Rectangle {
+                required property var modelData
+                width: Style.space(218)
+                height: Style.space(54)
+                radius: Math.min(8, Style.cornerRadius)
+                color: root.semanticFill("neutral")
+
+                Row {
+                  anchors.fill: parent
+                  anchors.margins: Style.space(10)
+                  spacing: Style.space(10)
+
+                  Text {
+                    width: Style.space(22)
+                    anchors.verticalCenter: parent.verticalCenter
+                    horizontalAlignment: Text.AlignHCenter
+                    text: modelData.icon
+                    color: Color.accent
+                    font.family: root.bar.fontFamily
+                    font.pixelSize: Style.font.title
+                  }
+                  Column {
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Style.space(2)
+
+                    Text {
+                      text: modelData.label
+                      color: Qt.darker(root.bar.foreground, 1.42)
+                      font.family: root.bar.fontFamily
+                      font.pixelSize: Style.font.caption
+                      font.letterSpacing: 0.7
+                    }
+                    Text {
+                      text: modelData.value
+                      color: root.bar.foreground
+                      font.family: root.bar.fontFamily
+                      font.pixelSize: Style.font.body
+                      font.bold: true
+                    }
+                  }
+                }
+              }
             }
           }
         }

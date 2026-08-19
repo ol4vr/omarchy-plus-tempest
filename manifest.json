@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.ol4vr.tempest",
   "name": "Tempest",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "author": "Olav Rorvik (ol4vr)",
   "license": "MIT",
   "description": "Weather, hourly outlook, air quality, and pollen for the Omarchy bar",

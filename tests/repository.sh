@@ -12,7 +12,7 @@ repo = Path(sys.argv[1])
 manifest = json.loads((repo / "manifest.json").read_text(encoding="utf-8"))
 assert manifest["schemaVersion"] == 1
 assert manifest["id"] == "io.github.ol4vr.tempest"
-assert manifest["version"] == "1.1.0"
+assert manifest["version"] == "1.1.1"
 assert manifest["author"] == "Olav Rorvik (ol4vr)"
 assert manifest["entryPoints"]["barWidget"] == "BarWidget.qml"
 assert manifest["barWidget"]["allowMultiple"] is False
@@ -27,6 +27,11 @@ assert 'ipcTarget: "io.github.ol4vr.tempest"' in panel
 assert 'tooltipText: root.hoverSummary' in bar
 assert 'icon: ""' in panel
 assert 'icon: ""' in panel
+assert 'icon: ""' in panel
+assert 'icon: ""' in panel
+assert 'text: "MOON"' in panel
+assert 'label: "MOONRISE"' in panel
+assert 'label: "MOONSET"' in panel
 assert 'text: "NEXT 6 HOURS"' in panel
 assert 'text: "3-DAY OUTLOOK"' in panel
 assert 'text: "TODAY\'S DETAILS"' in panel
