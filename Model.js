@@ -91,6 +91,296 @@ function formatTemp(value, useImperial) {
   return value + "°" + (useImperial ? "F" : "C")
 }
 
+function finiteNumber(value) {
+  if (value === undefined || value === null || value === "") return null
+  var n = parseFloat(String(value))
+  return isNaN(n) || !isFinite(n) ? null : n
+}
+
+function roundedNumber(value, decimals) {
+  var n = finiteNumber(value)
+  if (n === null) return ""
+  var places = Math.max(0, parseInt(decimals, 10) || 0)
+  var factor = Math.pow(10, places)
+  return String(Math.round(n * factor) / factor)
+}
+
+function formatVisibilityKm(meters) {
+  var value = finiteNumber(meters)
+  if (value === null || value <= 0) return ""
+  if (value < 1000) return "<1"
+  return roundedNumber(value / 1000, value < 10000 ? 1 : 0)
+}
+
+function isoTimeLabel(value) {
+  var raw = String(value || "")
+  return raw.length >= 16 ? raw.slice(11, 16) : ""
+}
+
+function durationLabel(seconds) {
+  var value = finiteNumber(seconds)
+  if (value === null || value < 0) return ""
+  var minutes = Math.round(value / 60)
+  return Math.floor(minutes / 60) + "h " + String(minutes % 60).padStart(2, "0") + "m"
+}
+
+function dailyIndex(report, dateString) {
+  var daily = report && report.daily ? report.daily : null
+  var times = daily && daily.time ? daily.time : []
+  var wanted = String(dateString || "").slice(0, 10)
+  for (var i = 0; i < times.length; i++) {
+    if (String(times[i]).slice(0, 10) === wanted) return i
+  }
+  return times.length > 0 ? 0 : -1
+}
+
+function arrayValue(object, key, index) {
+  var values = object && object[key] ? object[key] : null
+  return values && index >= 0 && index < values.length ? values[index] : null
+}
+
+function moonPhaseLabel(value) {
+  var phase = finiteNumber(value)
+  if (phase === null) return ""
+  phase = ((phase % 1) + 1) % 1
+  var labels = [
+    "New moon", "Waxing crescent", "First quarter", "Waxing gibbous",
+    "Full moon", "Waning gibbous", "Last quarter", "Waning crescent"
+  ]
+  return labels[Math.floor(phase * 8 + 0.5) % 8]
+}
+
+function openMeteoDayDetails(report, dateString, useImperial) {
+  var daily = report && report.daily ? report.daily : null
+  var index = dailyIndex(report, dateString)
+  if (!daily || index < 0) return {}
+
+  var gustKmh = finiteNumber(arrayValue(daily, "wind_gusts_10m_max", index))
+  var gust = gustKmh === null ? "" : roundedNumber(useImperial ? gustKmh * 0.621371 : gustKmh, 0)
+  var snow = roundedNumber(arrayValue(daily, "snowfall_sum", index), 1)
+  return {
+    sunrise: isoTimeLabel(arrayValue(daily, "sunrise", index)),
+    sunset: isoTimeLabel(arrayValue(daily, "sunset", index)),
+    daylight: durationLabel(arrayValue(daily, "daylight_duration", index)),
+    uvMax: roundedNumber(arrayValue(daily, "uv_index_max", index), 1),
+    precipitationProbability: roundedNumber(arrayValue(daily, "precipitation_probability_max", index), 0),
+    gust: gust,
+    gustKmh: gustKmh,
+    gustUnit: useImperial ? "mph" : "km/h",
+    snowfall: snow,
+    moonrise: isoTimeLabel(arrayValue(daily, "moonrise", index)),
+    moonset: isoTimeLabel(arrayValue(daily, "moonset", index)),
+    moonPhase: moonPhaseLabel(arrayValue(daily, "moon_phase", index))
+  }
+}
+
+// Small, deliberately conservative visual scale for weather metrics. These
+// levels drive presentation only; they are not official warnings.
+function weatherMetricLevel(kind, value) {
+  var number = finiteNumber(value)
+  if (number === null) return "neutral"
+
+  if (kind === "uv") {
+    if (number <= 2) return "good"
+    if (number <= 5) return "fair"
+    if (number <= 7) return "warning"
+    return "danger"
+  }
+  if (kind === "gust") {
+    if (number < 30) return "good"
+    if (number < 50) return "fair"
+    if (number < 75) return "warning"
+    return "danger"
+  }
+  if (kind === "visibility") {
+    if (number >= 10) return "good"
+    if (number >= 4) return "fair"
+    if (number >= 1) return "warning"
+    return "danger"
+  }
+  if (kind === "rain") {
+    if (number < 20) return "good"
+    if (number < 50) return "fair"
+    if (number < 70) return "warning"
+    return "danger"
+  }
+  if (kind === "snow") {
+    if (number <= 0) return "good"
+    if (number <= 1) return "fair"
+    if (number <= 5) return "warning"
+    return "danger"
+  }
+  return "neutral"
+}
+
+function openMeteoHourly(report, nowString, count, useImperial) {
+  var hourly = report && report.hourly ? report.hourly : null
+  var times = hourly && hourly.time ? hourly.time : []
+  var wanted = String(nowString || "").slice(0, 13)
+  var limit = Math.max(0, parseInt(count, 10) || 0)
+  var out = []
+
+  for (var i = 0; i < times.length && out.length < limit; i++) {
+    var time = String(times[i] || "")
+    if (wanted && time.slice(0, 13) < wanted) continue
+    var tempC = finiteNumber(arrayValue(hourly, "temperature_2m", i))
+    var gustKmh = finiteNumber(arrayValue(hourly, "wind_gusts_10m", i))
+    var visibility = finiteNumber(arrayValue(hourly, "visibility", i))
+    out.push({
+      time: time,
+      timeLabel: isoTimeLabel(time),
+      temperature: tempC === null ? "" : roundedNumber(useImperial ? celsiusToFahrenheit(tempC) : tempC, 0) + "°",
+      precipitationProbability: roundedNumber(arrayValue(hourly, "precipitation_probability", i), 0),
+      snowfall: roundedNumber(arrayValue(hourly, "snowfall", i), 1),
+      gustKmh: gustKmh,
+      gust: gustKmh === null ? "" : roundedNumber(useImperial ? gustKmh * 0.621371 : gustKmh, 0),
+      visibilityKm: formatVisibilityKm(visibility),
+      visibilityKmValue: visibility !== null && visibility > 0 ? visibility / 1000 : null,
+      icon: iconForOpenMeteoCode(arrayValue(hourly, "weather_code", i), Number(arrayValue(hourly, "is_day", i)) === 0)
+    })
+  }
+  return out
+}
+
+function maxHourlyNumber(rows, key, count) {
+  var limit = Math.min(rows ? rows.length : 0, Math.max(0, parseInt(count, 10) || 0))
+  var max = null
+  for (var i = 0; i < limit; i++) {
+    var value = finiteNumber(rows[i] && rows[i][key])
+    if (value !== null && (max === null || value > max)) max = value
+  }
+  return max
+}
+
+function sumHourlyNumber(rows, key, count) {
+  var limit = Math.min(rows ? rows.length : 0, Math.max(0, parseInt(count, 10) || 0))
+  var total = 0
+  var found = false
+  for (var i = 0; i < limit; i++) {
+    var value = finiteNumber(rows[i] && rows[i][key])
+    if (value !== null) {
+      total += value
+      found = true
+    }
+  }
+  return found ? total : null
+}
+
+function weatherHighlights(hourlyRows, dayDetails, useImperial) {
+  var result = []
+  var rain = maxHourlyNumber(hourlyRows, "precipitationProbability", 3)
+  var gustKmh = maxHourlyNumber(hourlyRows, "gustKmh", 6)
+  var snow = sumHourlyNumber(hourlyRows, "snowfall", 6)
+  var uv = finiteNumber(dayDetails && dayDetails.uvMax)
+
+  if (rain !== null && rain >= 40) result.push("RAIN " + Math.round(rain) + "%")
+  if (gustKmh !== null && gustKmh >= 50) {
+    var gust = useImperial ? gustKmh * 0.621371 : gustKmh
+    result.push("GUSTS " + Math.round(gust) + " " + (useImperial ? "MPH" : "KM/H"))
+  }
+  if (snow !== null && snow >= 0.1) result.push("SNOW " + roundedNumber(snow, 1) + " CM")
+  if (uv !== null && uv >= 6) result.push("UV " + roundedNumber(uv, 1))
+  return result
+}
+
+function airQualityCategory(value) {
+  var aqi = finiteNumber(value)
+  if (aqi === null) return ""
+  if (aqi <= 20) return "Good"
+  if (aqi <= 40) return "Fair"
+  if (aqi <= 60) return "Moderate"
+  if (aqi <= 80) return "Poor"
+  if (aqi <= 100) return "Very poor"
+  return "Extremely poor"
+}
+
+function airQualityLevel(value) {
+  var aqi = finiteNumber(value)
+  if (aqi === null) return "neutral"
+  if (aqi <= 20) return "good"
+  if (aqi <= 40) return "fair"
+  if (aqi <= 60) return "warning"
+  return "danger"
+}
+
+function semanticHex(level) {
+  if (level === "good") return "#8FCB9B"
+  if (level === "fair") return "#7AA2F7"
+  if (level === "warning") return "#E0AF68"
+  if (level === "danger") return "#F7768E"
+  return "#A9B1D6"
+}
+
+function tooltipPart(icon, label, value, level) {
+  return '<font color="' + semanticHex(level) + '">' + icon + ' <b>' + label + '</b> ' + value + '</font>'
+}
+
+function airQualitySummary(report) {
+  var current = report && report.current ? report.current : null
+  if (!current) return {}
+  var aqi = roundedNumber(current.european_aqi, 0)
+  return {
+    aqi: aqi,
+    category: airQualityCategory(aqi),
+    level: airQualityLevel(aqi),
+    pm2_5: roundedNumber(current.pm2_5, 1),
+    pm10: roundedNumber(current.pm10, 1)
+  }
+}
+
+function pollenItems(report, hours) {
+  var current = report && report.current ? report.current : {}
+  var hourly = report && report.hourly ? report.hourly : {}
+  var species = [
+    { key: "alder_pollen", label: "Alder" },
+    { key: "birch_pollen", label: "Birch" },
+    { key: "grass_pollen", label: "Grass" },
+    { key: "mugwort_pollen", label: "Mugwort" },
+    { key: "olive_pollen", label: "Olive" },
+    { key: "ragweed_pollen", label: "Ragweed" }
+  ]
+  var out = []
+  var limit = Math.max(1, parseInt(hours, 10) || 24)
+
+  for (var i = 0; i < species.length; i++) {
+    var item = species[i]
+    var now = finiteNumber(current[item.key])
+    var values = hourly[item.key] || []
+    var peak = null
+    for (var j = 0; j < values.length && j < limit; j++) {
+      var value = finiteNumber(values[j])
+      if (value !== null && (peak === null || value > peak)) peak = value
+    }
+    if (now === null && peak === null) continue
+    if ((now || 0) <= 0 && (peak || 0) <= 0) continue
+    var trend = now === null ? "Expected" : (peak !== null && peak > now ? "Rising" : "Steady")
+    out.push({
+      label: item.label,
+      current: now === null ? "—" : roundedNumber(now, 1),
+      peak: peak === null ? "—" : roundedNumber(peak, 1),
+      trend: trend,
+      level: trend === "Rising" || trend === "Expected" ? "warning" : "fair"
+    })
+  }
+  return out
+}
+
+function hoverSummary(current, hourlyRows, airQuality, pollen, useImperial) {
+  var parts = []
+  if (current) {
+    var temp = useImperial ? current.temp_F : current.temp_C
+    var feels = useImperial ? current.FeelsLikeF : current.FeelsLikeC
+    var icon = currentIcon(current, "󰔏")
+    if (temp !== undefined && temp !== null && temp !== "") parts.push(tooltipPart(icon, "Temperature", temp + "°" + (useImperial ? "F" : "C"), "fair"))
+    if (feels !== undefined && feels !== null && feels !== "") parts.push(tooltipPart("", "Feels", feels + "°", "neutral"))
+  }
+  var rain = maxHourlyNumber(hourlyRows, "precipitationProbability", 3)
+  if (rain !== null) parts.push(tooltipPart("󰖗", "Rain", Math.round(rain) + "%", weatherMetricLevel("rain", rain)))
+  if (airQuality && airQuality.category) parts.push(tooltipPart("󰌪", "Air", airQuality.category, airQuality.level || "neutral"))
+  if (pollen && pollen.length > 0) parts.push(tooltipPart("", "Pollen", pollen[0].label, pollen[0].level || "warning"))
+  return parts.join(" · ")
+}
+
 function normalizedUnit(value) {
   return String(value || "").replace(/^\s+|\s+$/g, "").toLowerCase()
 }
@@ -160,6 +450,7 @@ function openMeteoForecastDays(dailyForecastReport, todayString) {
 function openMeteoCurrentCondition(dailyForecastReport) {
   var current = dailyForecastReport && dailyForecastReport.current ? dailyForecastReport.current : null
   if (!current || current.temperature_2m === undefined || current.temperature_2m === null) return null
+  var visibility = finiteNumber(current.visibility)
   return {
     temp_C: roundedTemp(current.temperature_2m),
     temp_F: roundedTemp(celsiusToFahrenheit(current.temperature_2m)),
@@ -167,7 +458,11 @@ function openMeteoCurrentCondition(dailyForecastReport) {
     FeelsLikeF: roundedTemp(celsiusToFahrenheit(current.apparent_temperature)),
     windspeedKmph: roundedTemp(current.wind_speed_10m),
     windspeedMiles: roundedTemp(current.wind_speed_10m * 0.621371),
+    windgustKmph: roundedTemp(current.wind_gusts_10m),
+    windgustMiles: roundedTemp(current.wind_gusts_10m * 0.621371),
     humidity: roundedTemp(current.relative_humidity_2m),
+    visibilityKm: formatVisibilityKm(visibility),
+    visibilityKmValue: visibility !== null && visibility > 0 ? visibility / 1000 : null,
     openMeteoWeatherCode: current.weather_code,
     isDay: current.is_day
   }
@@ -275,6 +570,22 @@ if (typeof module !== "undefined") {
     roundedTemp: roundedTemp,
     celsiusToFahrenheit: celsiusToFahrenheit,
     formatTemp: formatTemp,
+    finiteNumber: finiteNumber,
+    roundedNumber: roundedNumber,
+    formatVisibilityKm: formatVisibilityKm,
+    isoTimeLabel: isoTimeLabel,
+    durationLabel: durationLabel,
+    moonPhaseLabel: moonPhaseLabel,
+    openMeteoDayDetails: openMeteoDayDetails,
+    openMeteoHourly: openMeteoHourly,
+    weatherMetricLevel: weatherMetricLevel,
+    weatherHighlights: weatherHighlights,
+    airQualityCategory: airQualityCategory,
+    airQualityLevel: airQualityLevel,
+    semanticHex: semanticHex,
+    airQualitySummary: airQualitySummary,
+    pollenItems: pollenItems,
+    hoverSummary: hoverSummary,
     normalizedUnit: normalizedUnit,
     localeUsesImperial: localeUsesImperial,
     countryUsesImperial: countryUsesImperial,

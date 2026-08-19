@@ -9,6 +9,18 @@ built-in weather widget and forked from
 The forecast popup, location picker, and data sources are unchanged; the bar
 pill shows **icon + temp** instead of the icon alone.
 
+Tempest also adds:
+
+- a six-hour condition, temperature, and precipitation outlook
+- rain, wind-gust, snow, and UV heads-up indicators
+- sunrise, sunset, daylight, visibility, and moon information
+- European Air Quality Index with PM2.5 and PM10
+- current and next-24-hour peak pollen concentrations for alder, birch, grass,
+  mugwort, olive, and ragweed
+- icon-led sections, aligned metric cards, and restrained status colors for
+  faster scanning
+- a concise hover summary while keeping the bar pill unchanged
+
 ![Tempest on the Omarchy bar, showing the condition icon and current temperature](preview.png)
 
 ## Install
@@ -60,6 +72,13 @@ Omarchy Quattro, and `curl`, which Omarchy already installs. The plugin calls
 
 Temperature units follow locale and country (Fahrenheit in the US, Celsius
 elsewhere).
+
+Weather data comes from wttr.in and Open-Meteo. Air-quality and pollen data
+comes from Open-Meteo's CAMS-backed Air Quality API. Pollen concentrations are
+shown in grains/m³ as the current value and next-24-hour peak; they are not
+medical guidance. A rising pollen label only means the reported 24-hour peak
+is above the current value. Pollen data is available in Europe during pollen
+season. Weather colors are informational presentation, not official warnings.
 
 ## License
 

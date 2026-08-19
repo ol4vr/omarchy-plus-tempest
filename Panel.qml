@@ -70,6 +70,7 @@ Panel {
   // Parsed wttr.in j1 response. Kept on failure so stale data stays visible.
   property var report: null
   property var dailyForecastReport: null
+  property var airQualityReport: null
   property string wttrLocation: ""
 
   // Configured location, read from the weather.json state file (owned by
@@ -87,8 +88,11 @@ Panel {
     if (savingLocation) savingLocationQueryStarted = true
     forecastRetries = 0
     dailyForecastRetries = 0
+    airQualityRetries = 0
     forecastProc.running = false
     dailyForecastProc.running = false
+    airQualityProc.running = false
+    airQualityReport = null
     Qt.callLater(refresh)
   }
 
@@ -113,6 +117,7 @@ Panel {
 
   property int forecastRetries: 0
   property int dailyForecastRetries: 0
+  property int airQualityRetries: 0
 
   // Click-to-edit state for the location label.
   property bool editingLocation: false
@@ -133,6 +138,12 @@ Panel {
   readonly property var current: (hasConfiguredCoordinates && openMeteoCurrent) ? openMeteoCurrent : ((report && report.current_condition && report.current_condition[0]) ? report.current_condition[0] : openMeteoCurrent)
   readonly property var areaInfo: report && report.nearest_area && report.nearest_area[0] ? report.nearest_area[0] : null
   readonly property var forecastDays: buildForecastDays()
+  readonly property string currentHour: Qt.formatDateTime(new Date(), "yyyy-MM-ddTHH:00")
+  readonly property var hourlyForecast: Model.openMeteoHourly(dailyForecastReport, currentHour, 6, useImperial)
+  readonly property var dayDetails: Model.openMeteoDayDetails(dailyForecastReport, Qt.formatDate(new Date(), "yyyy-MM-dd"), useImperial)
+  readonly property var airQuality: Model.airQualitySummary(airQualityReport)
+  readonly property var pollen: Model.pollenItems(airQualityReport, 24)
+  readonly property var highlights: Model.weatherHighlights(hourlyForecast, dayDetails, useImperial)
   readonly property string reportCountry: areaInfo && areaInfo.country && areaInfo.country[0] ? areaInfo.country[0].value : ""
 
   readonly property bool useImperial: Model.shouldUseImperial(setting("unit", ""), Qt.locale().name, reportCountry)
@@ -149,6 +160,42 @@ Panel {
   readonly property string reportFeels:     current ? formatTemp(useImperial ? current.FeelsLikeF : current.FeelsLikeC) : ""
   readonly property string reportWind:      current ? (useImperial ? (current.windspeedMiles + " mph") : (current.windspeedKmph + " km/h")) : ""
   readonly property string reportHumidity:  current ? (current.humidity + "%") : ""
+  readonly property string reportVisibility: openMeteoCurrent && openMeteoCurrent.visibilityKm !== "" ? (openMeteoCurrent.visibilityKm + " km") : ""
+  readonly property string hoverSummary: Model.hoverSummary(current, hourlyForecast, airQuality, pollen, useImperial)
+  readonly property var detailItems: [
+    { icon: "", label: "SUNRISE", value: dayDetails.sunrise || "—", level: "neutral" },
+    { icon: "", label: "SUNSET", value: dayDetails.sunset || "—", level: "neutral" },
+    { icon: "", label: "DAYLIGHT", value: dayDetails.daylight || "—", level: "neutral" },
+    { icon: "󰖨", label: "UV MAX", value: dayDetails.uvMax || "—", level: Model.weatherMetricLevel("uv", dayDetails.uvMax) },
+    { icon: "󰖝", label: "GUST MAX", value: dayDetails.gust ? (dayDetails.gust + " " + dayDetails.gustUnit) : "—", level: Model.weatherMetricLevel("gust", dayDetails.gustKmh) },
+    { icon: "", label: "VISIBILITY", value: reportVisibility || "—", level: Model.weatherMetricLevel("visibility", openMeteoCurrent ? openMeteoCurrent.visibilityKmValue : null) },
+    { icon: "󰖗", label: "RAIN MAX", value: dayDetails.precipitationProbability ? (dayDetails.precipitationProbability + "%") : "—", level: Model.weatherMetricLevel("rain", dayDetails.precipitationProbability) },
+    { icon: "󰜗", label: "SNOW", value: dayDetails.snowfall ? (dayDetails.snowfall + " cm") : "—", level: Model.weatherMetricLevel("snow", dayDetails.snowfall) }
+  ]
+
+  readonly property color goodTone: "#8FCB9B"
+  readonly property color fairTone: "#7AA2F7"
+  readonly property color warningTone: "#E0AF68"
+  readonly property color dangerTone: "#F7768E"
+
+  function semanticColor(level) {
+    if (level === "good") return goodTone
+    if (level === "fair") return fairTone
+    if (level === "warning") return warningTone
+    if (level === "danger") return dangerTone
+    return root.bar.foreground
+  }
+
+  function semanticFill(level) {
+    var color = semanticColor(level)
+    var alpha = level === "neutral" ? 0.045 : 0.105
+    return Qt.rgba(color.r, color.g, color.b, alpha)
+  }
+
+  function semanticBorder(level, alpha) {
+    var color = semanticColor(level)
+    return Qt.rgba(color.r, color.g, color.b, alpha)
+  }
 
   function refresh() {
     // Each full refresh cycle gets a fresh retry budget, so an earlier
@@ -156,6 +203,7 @@ Panel {
     // starve retries for the rest of the session.
     forecastRetries = 0
     dailyForecastRetries = 0
+    airQualityRetries = 0
     if (!forecastProc.running) forecastProc.running = true
     if (root.locationQuery === "" && !locationProc.running) locationProc.running = true
     // With stored coordinates this fetches open-meteo right away — no need
@@ -165,8 +213,6 @@ Panel {
   }
 
   function refreshDailyForecast(sourceReport) {
-    if (dailyForecastProc.running) return
-
     var lat = parseFloat(String(root.configuredLocationState.latitude))
     var lon = parseFloat(String(root.configuredLocationState.longitude))
     if (isNaN(lat) || isNaN(lon)) {
@@ -177,15 +223,33 @@ Panel {
     }
     if (isNaN(lat) || isNaN(lon)) return
 
+    root.refreshAirQuality(lat, lon)
+    if (dailyForecastProc.running) return
+
     var url = "https://api.open-meteo.com/v1/forecast"
       + "?latitude=" + encodeURIComponent(String(lat))
       + "&longitude=" + encodeURIComponent(String(lon))
-      + "&daily=weather_code,temperature_2m_max,temperature_2m_min"
-      + "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code,is_day"
+      + "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,daylight_duration,uv_index_max,precipitation_probability_max,wind_gusts_10m_max,snowfall_sum,moonrise,moonset,moon_phase"
+      + "&hourly=temperature_2m,precipitation_probability,snowfall,weather_code,wind_gusts_10m,visibility,is_day"
+      + "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,visibility,weather_code,is_day"
       + "&forecast_days=4"
+      + "&forecast_hours=12"
       + "&timezone=auto"
     dailyForecastProc.command = ["curl", "-fsS", "--max-time", "5", url]
     dailyForecastProc.running = true
+  }
+
+  function refreshAirQuality(lat, lon) {
+    if (airQualityProc.running) return
+    var url = "https://air-quality-api.open-meteo.com/v1/air-quality"
+      + "?latitude=" + encodeURIComponent(String(lat))
+      + "&longitude=" + encodeURIComponent(String(lon))
+      + "&current=european_aqi,pm2_5,pm10,alder_pollen,birch_pollen,grass_pollen,mugwort_pollen,olive_pollen,ragweed_pollen"
+      + "&hourly=alder_pollen,birch_pollen,grass_pollen,mugwort_pollen,olive_pollen,ragweed_pollen"
+      + "&forecast_hours=24"
+      + "&timezone=auto"
+    airQualityProc.command = ["curl", "-fsS", "--max-time", "5", url]
+    airQualityProc.running = true
   }
 
   // ---- Location editing. Clicking the location label swaps it for a search
@@ -385,10 +449,26 @@ Panel {
     dailyForecastRetryTimer.restart()
   }
 
+  function scheduleAirQualityRetry() {
+    if (airQualityRetries >= 3) return
+    airQualityRetries++
+    airQualityRetryTimer.restart()
+  }
+
   Timer {
     id: dailyForecastRetryTimer
     interval: 2500
     onTriggered: root.refreshDailyForecast(null)
+  }
+
+  Timer {
+    id: airQualityRetryTimer
+    interval: 3000
+    onTriggered: {
+      var lat = parseFloat(String(root.configuredLocationState.latitude))
+      var lon = parseFloat(String(root.configuredLocationState.longitude))
+      if (!isNaN(lat) && !isNaN(lon)) root.refreshAirQuality(lat, lon)
+    }
   }
 
   Process {
@@ -412,6 +492,28 @@ Panel {
         } catch (e) {
           // Keep last-good daily forecast visible, but try again shortly.
           root.scheduleDailyForecastRetry()
+        }
+      }
+    }
+  }
+
+  Process {
+    id: airQualityProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var raw = String(text || "").trim()
+        if (!raw) {
+          root.scheduleAirQualityRetry()
+          return
+        }
+        try {
+          var parsed = JSON.parse(raw)
+          if (parsed.error) throw new Error(String(parsed.reason || "Air-quality request failed"))
+          root.airQualityReport = parsed
+          root.airQualityRetries = 0
+        } catch (e) {
+          root.scheduleAirQualityRetry()
         }
       }
     }
@@ -447,8 +549,10 @@ Panel {
         root.savingLocationQueryStarted = true
         root.forecastRetries = 0
         root.dailyForecastRetries = 0
+        root.airQualityRetries = 0
         forecastProc.running = false
         dailyForecastProc.running = false
+        airQualityProc.running = false
         Qt.callLater(root.refresh)
       }
     }
@@ -790,6 +894,154 @@ Panel {
         font.italic: true
       }
 
+      // ---- Context-sensitive heads-up badges. These are informational
+      //      thresholds, not official weather warnings.
+      Column {
+        visible: root.highlights.length > 0
+        width: parent.width
+        spacing: Style.space(8)
+
+        Row {
+          anchors.left: parent.left
+          anchors.leftMargin: Style.space(20)
+          spacing: Style.space(8)
+
+          Text {
+            text: ""
+            color: root.semanticColor("warning")
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.title
+          }
+          Text {
+            text: "HEADS UP"
+            color: root.bar.foreground
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.title
+            font.bold: true
+            font.letterSpacing: 0.5
+          }
+        }
+
+        Flow {
+          width: parent.width - Style.space(40)
+          anchors.horizontalCenter: parent.horizontalCenter
+          spacing: Style.space(8)
+
+          Repeater {
+            model: root.highlights
+
+            Rectangle {
+              required property string modelData
+              implicitWidth: highlightText.implicitWidth + Style.space(18)
+              implicitHeight: highlightText.implicitHeight + Style.space(9)
+              radius: Math.min(7, Style.cornerRadius)
+              color: root.semanticFill("warning")
+              border.width: 1
+              border.color: root.semanticBorder("warning", 0.28)
+
+              Text {
+                id: highlightText
+                anchors.centerIn: parent
+                text: modelData
+                color: root.semanticColor("warning")
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+                font.letterSpacing: 0.6
+              }
+            }
+          }
+        }
+      }
+
+      Rectangle {
+        visible: root.hourlyForecast.length > 0
+        width: parent.width
+        height: Style.spacing.hairline
+        color: root.bar.foreground
+        opacity: 0.12
+      }
+
+      Column {
+        visible: root.hourlyForecast.length > 0
+        width: parent.width
+        spacing: Style.space(12)
+
+        Row {
+          anchors.left: parent.left
+          anchors.leftMargin: Style.space(20)
+          spacing: Style.space(8)
+
+          Text {
+            text: ""
+            color: Color.accent
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.title
+          }
+          Text {
+            text: "NEXT 6 HOURS"
+            color: root.bar.foreground
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.title
+            font.bold: true
+            font.letterSpacing: 0.5
+          }
+        }
+
+        Row {
+          anchors.horizontalCenter: parent.horizontalCenter
+          spacing: Style.space(8)
+
+          Repeater {
+            model: root.hourlyForecast
+
+            Rectangle {
+              required property var modelData
+              width: Style.space(68)
+              height: Style.space(92)
+              radius: Math.min(8, Style.cornerRadius)
+              color: root.semanticFill("neutral")
+
+              Column {
+                anchors.centerIn: parent
+                spacing: Style.space(3)
+
+                Text {
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  text: modelData.timeLabel
+                  color: Qt.darker(root.bar.foreground, 1.45)
+                  font.family: root.bar.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+                Text {
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  text: modelData.icon
+                  color: root.bar.foreground
+                  font.family: root.bar.fontFamily
+                  font.pixelSize: Style.font.display
+                }
+                Text {
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  text: modelData.temperature
+                  color: root.bar.foreground
+                  font.family: root.bar.fontFamily
+                  font.pixelSize: Style.font.body
+                  font.bold: true
+                }
+                Text {
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  text: modelData.precipitationProbability !== "" ? ("󰖗 " + modelData.precipitationProbability + "%") : ""
+                  visible: text !== ""
+                  color: root.semanticColor(Model.weatherMetricLevel("rain", modelData.precipitationProbability))
+                  font.family: root.bar.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+              }
+            }
+          }
+        }
+      }
+
       // ---- Divider between current conditions and forecast.
       Rectangle {
         visible: root.forecastDays.length > 0
@@ -799,65 +1051,468 @@ Panel {
         opacity: 0.12
       }
 
-      // ---- Forecast row: each cell has the day icon left of a day-name + hi/lo column.
-      //      Wrapped in an Item so the block of cells can be centered within the popup.
-      Item {
+      // ---- Three-day outlook.
+      Column {
         visible: root.forecastDays.length > 0
         width: parent.width
-        height: forecastRow.height
+        spacing: Style.space(12)
+
+        Row {
+          anchors.left: parent.left
+          anchors.leftMargin: Style.space(20)
+          spacing: Style.space(8)
+
+          Text {
+            text: ""
+            color: Color.accent
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.title
+          }
+          Text {
+            text: "3-DAY OUTLOOK"
+            color: root.bar.foreground
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.title
+            font.bold: true
+            font.letterSpacing: 0.5
+          }
+        }
 
         Row {
           id: forecastRow
           anchors.horizontalCenter: parent.horizontalCenter
-          spacing: Style.space(44)
+          spacing: Style.space(10)
 
           Repeater {
             model: root.forecastDays
 
-            Row {
+            Rectangle {
               required property var modelData
               required property int index
-              spacing: Style.space(10)
+              width: Style.space(142)
+              height: Style.space(66)
+              radius: Math.min(8, Style.cornerRadius)
+              color: root.semanticFill("neutral")
 
-              Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: root.dayIcon(modelData)
-                color: root.bar.foreground
-                font.family: root.bar.fontFamily
-                font.pixelSize: Style.font.display
-              }
-
-              Column {
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: Style.space(2)
+              Row {
+                anchors.fill: parent
+                anchors.margins: Style.space(10)
+                spacing: Style.space(10)
 
                 Text {
-                  text: root.dayName(modelData.date).toUpperCase()
-                  color: Qt.darker(root.bar.foreground, 1.4)
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: root.dayIcon(modelData)
+                  color: root.bar.foreground
                   font.family: root.bar.fontFamily
-                  font.pixelSize: Style.font.caption
-                  font.letterSpacing: 1
+                  font.pixelSize: Style.font.display
                 }
 
-                Row {
-                  spacing: Style.space(6)
+                Column {
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.space(3)
 
                   Text {
-                    text: root.bareTempForDay(modelData, "max")
+                    text: root.dayName(modelData.date).toUpperCase()
                     color: root.bar.foreground
                     font.family: root.bar.fontFamily
-                    font.pixelSize: Style.font.body
+                    font.pixelSize: Style.font.caption
+                    font.bold: true
+                    font.letterSpacing: 0.5
                   }
-                  Text {
-                    text: root.bareTempForDay(modelData, "min")
-                    color: Qt.darker(root.bar.foreground, 1.5)
-                    font.family: root.bar.fontFamily
-                    font.pixelSize: Style.font.body
+
+                  Row {
+                    spacing: Style.space(8)
+
+                    Text {
+                      text: "↑ " + root.bareTempForDay(modelData, "max")
+                      color: root.semanticColor("warning")
+                      font.family: root.bar.fontFamily
+                      font.pixelSize: Style.font.body
+                    }
+                    Text {
+                      text: "↓ " + root.bareTempForDay(modelData, "min")
+                      color: root.semanticColor("fair")
+                      font.family: root.bar.fontFamily
+                      font.pixelSize: Style.font.body
+                    }
                   }
                 }
               }
             }
           }
+        }
+      }
+
+      Rectangle {
+        visible: root.dailyForecastReport !== null
+        width: parent.width
+        height: Style.spacing.hairline
+        color: root.bar.foreground
+        opacity: 0.12
+      }
+
+      Column {
+        visible: root.dailyForecastReport !== null
+        width: parent.width
+        spacing: Style.space(12)
+
+        Row {
+          anchors.left: parent.left
+          anchors.leftMargin: Style.space(20)
+          spacing: Style.space(8)
+
+          Text {
+            text: ""
+            color: Color.accent
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.title
+          }
+          Text {
+            text: "TODAY'S DETAILS"
+            color: root.bar.foreground
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.title
+            font.bold: true
+            font.letterSpacing: 0.5
+          }
+        }
+
+        Grid {
+          anchors.horizontalCenter: parent.horizontalCenter
+          columns: 2
+          columnSpacing: Style.space(12)
+          rowSpacing: Style.space(8)
+
+          Repeater {
+            model: root.detailItems
+
+            Rectangle {
+              required property var modelData
+              width: Style.space(218)
+              height: Style.space(54)
+              radius: Math.min(8, Style.cornerRadius)
+              color: root.semanticFill(modelData.level)
+              border.width: modelData.level === "neutral" ? 0 : 1
+              border.color: root.semanticBorder(modelData.level, 0.22)
+
+              Row {
+                anchors.fill: parent
+                anchors.margins: Style.space(10)
+                spacing: Style.space(10)
+
+                Text {
+                  width: Style.space(22)
+                  anchors.verticalCenter: parent.verticalCenter
+                  horizontalAlignment: Text.AlignHCenter
+                  text: modelData.icon
+                  color: root.semanticColor(modelData.level)
+                  font.family: root.bar.fontFamily
+                  font.pixelSize: Style.font.title
+                }
+                Column {
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.space(2)
+
+                  Text {
+                    text: modelData.label
+                    color: Qt.darker(root.bar.foreground, 1.42)
+                    font.family: root.bar.fontFamily
+                    font.pixelSize: Style.font.caption
+                    font.letterSpacing: 0.7
+                  }
+                  Text {
+                    text: modelData.value
+                    color: modelData.level === "neutral" ? root.bar.foreground : root.semanticColor(modelData.level)
+                    font.family: root.bar.fontFamily
+                    font.pixelSize: Style.font.body
+                    font.bold: true
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        Rectangle {
+          visible: root.dayDetails.moonPhase !== ""
+          width: Style.space(448)
+          height: Style.space(48)
+          anchors.horizontalCenter: parent.horizontalCenter
+          radius: Math.min(8, Style.cornerRadius)
+          color: root.semanticFill("neutral")
+
+          Row {
+            anchors.fill: parent
+            anchors.leftMargin: Style.space(12)
+            anchors.rightMargin: Style.space(12)
+            spacing: Style.space(10)
+
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              text: ""
+              color: Color.accent
+              font.family: root.bar.fontFamily
+              font.pixelSize: Style.font.title
+            }
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              text: root.dayDetails.moonPhase.toUpperCase()
+              color: root.bar.foreground
+              font.family: root.bar.fontFamily
+              font.pixelSize: Style.font.body
+              font.bold: true
+            }
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              text: (root.dayDetails.moonrise ? ("RISE  " + root.dayDetails.moonrise) : "")
+                + (root.dayDetails.moonrise && root.dayDetails.moonset ? "    " : "")
+                + (root.dayDetails.moonset ? ("SET  " + root.dayDetails.moonset) : "")
+              color: Qt.darker(root.bar.foreground, 1.4)
+              font.family: root.bar.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+          }
+        }
+      }
+
+      Rectangle {
+        visible: root.airQuality.category !== "" || root.pollen.length > 0
+        width: parent.width
+        height: Style.spacing.hairline
+        color: root.bar.foreground
+        opacity: 0.12
+      }
+
+      Column {
+        visible: root.airQuality.category !== "" || root.pollen.length > 0
+        width: parent.width
+        spacing: Style.space(12)
+
+        Row {
+          anchors.left: parent.left
+          anchors.leftMargin: Style.space(20)
+          spacing: Style.space(8)
+
+          Text {
+            text: "󰌪"
+            color: Color.accent
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.title
+          }
+          Text {
+            text: "AIR QUALITY"
+            color: root.bar.foreground
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.title
+            font.bold: true
+            font.letterSpacing: 0.5
+          }
+        }
+
+        Rectangle {
+          visible: root.airQuality.category !== ""
+          width: Style.space(448)
+          height: Style.space(68)
+          anchors.horizontalCenter: parent.horizontalCenter
+          radius: Math.min(8, Style.cornerRadius)
+          color: root.semanticFill(root.airQuality.level)
+          border.width: 1
+          border.color: root.semanticBorder(root.airQuality.level, 0.24)
+
+          Row {
+            anchors.fill: parent
+            anchors.margins: Style.space(12)
+            spacing: Style.space(14)
+
+            Text {
+              width: Style.space(24)
+              anchors.verticalCenter: parent.verticalCenter
+              horizontalAlignment: Text.AlignHCenter
+              text: "󰵃"
+              color: root.semanticColor(root.airQuality.level)
+              font.family: root.bar.fontFamily
+              font.pixelSize: Style.font.display
+            }
+            Column {
+              width: Style.space(104)
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(2)
+
+              Text {
+                text: "EU AQI"
+                color: Qt.darker(root.bar.foreground, 1.42)
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.caption
+                font.letterSpacing: 0.7
+              }
+              Text {
+                text: root.airQuality.aqi
+                color: root.semanticColor(root.airQuality.level)
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.title
+                font.bold: true
+              }
+            }
+
+            Rectangle {
+              anchors.verticalCenter: parent.verticalCenter
+              implicitWidth: aqiCategory.implicitWidth + Style.space(16)
+              implicitHeight: aqiCategory.implicitHeight + Style.space(8)
+              radius: Math.min(7, Style.cornerRadius)
+              color: root.semanticFill(root.airQuality.level)
+
+              Text {
+                id: aqiCategory
+                anchors.centerIn: parent
+                text: root.airQuality.category.toUpperCase()
+                color: root.semanticColor(root.airQuality.level)
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+                font.letterSpacing: 0.5
+              }
+            }
+
+            Column {
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(3)
+
+              Text {
+                visible: root.airQuality.pm2_5 !== ""
+                text: "PM2.5   " + root.airQuality.pm2_5
+                color: Qt.darker(root.bar.foreground, 1.32)
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                visible: root.airQuality.pm10 !== ""
+                text: "PM10    " + root.airQuality.pm10
+                color: Qt.darker(root.bar.foreground, 1.32)
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+            }
+          }
+        }
+
+        Rectangle {
+          visible: root.pollen.length > 0
+          width: parent.width - Style.space(40)
+          height: Style.spacing.hairline
+          anchors.horizontalCenter: parent.horizontalCenter
+          color: root.bar.foreground
+          opacity: 0.08
+        }
+
+        Row {
+          visible: root.pollen.length > 0
+          anchors.left: parent.left
+          anchors.leftMargin: Style.space(20)
+          spacing: Style.space(8)
+
+          Text {
+            text: ""
+            color: root.semanticColor("good")
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.title
+          }
+          Column {
+            spacing: Style.space(2)
+
+            Text {
+              text: "POLLEN"
+              color: root.bar.foreground
+              font.family: root.bar.fontFamily
+              font.pixelSize: Style.font.title
+              font.bold: true
+              font.letterSpacing: 0.5
+            }
+            Text {
+              text: "NOW / NEXT 24H PEAK  ·  GRAINS/M³"
+              color: Qt.darker(root.bar.foreground, 1.45)
+              font.family: root.bar.fontFamily
+              font.pixelSize: Style.font.caption
+              font.letterSpacing: 0.4
+            }
+          }
+        }
+
+        Grid {
+          visible: root.pollen.length > 0
+          anchors.horizontalCenter: parent.horizontalCenter
+          columns: 2
+          columnSpacing: Style.space(12)
+          rowSpacing: Style.space(8)
+
+          Repeater {
+            model: root.pollen
+
+            Rectangle {
+              required property var modelData
+              width: Style.space(218)
+              height: Style.space(58)
+              radius: Math.min(8, Style.cornerRadius)
+              color: root.semanticFill(modelData.level)
+              border.width: 1
+              border.color: root.semanticBorder(modelData.level, 0.2)
+
+              Row {
+                anchors.fill: parent
+                anchors.margins: Style.space(10)
+                spacing: Style.space(9)
+
+                Text {
+                  width: Style.space(20)
+                  anchors.verticalCenter: parent.verticalCenter
+                  horizontalAlignment: Text.AlignHCenter
+                  text: "󰐕"
+                  color: root.semanticColor(modelData.level)
+                  font.family: root.bar.fontFamily
+                  font.pixelSize: Style.font.title
+                }
+                Column {
+                  width: Style.space(112)
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.space(2)
+
+                  Text {
+                    text: modelData.label.toUpperCase()
+                    color: root.bar.foreground
+                    font.family: root.bar.fontFamily
+                    font.pixelSize: Style.font.caption
+                    font.bold: true
+                    font.letterSpacing: 0.5
+                  }
+                  Text {
+                    text: modelData.current + "  →  " + modelData.peak
+                    color: root.semanticColor(modelData.level)
+                    font.family: root.bar.fontFamily
+                    font.pixelSize: Style.font.body
+                    font.bold: true
+                  }
+                }
+                Text {
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: modelData.trend.toUpperCase()
+                  color: root.semanticColor(modelData.level)
+                  font.family: root.bar.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                }
+              }
+            }
+          }
+        }
+
+        Text {
+          visible: root.airQuality.category !== "" && root.pollen.length === 0
+          anchors.left: parent.left
+          anchors.leftMargin: Style.space(20)
+          text: "No pollen reported for the current forecast window"
+          color: Qt.darker(root.bar.foreground, 1.5)
+          font.family: root.bar.fontFamily
+          font.pixelSize: Style.font.caption
+          font.italic: true
         }
       }
     }

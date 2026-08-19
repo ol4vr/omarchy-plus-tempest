@@ -31,8 +31,11 @@ if rg -n 'http://' "${runtime_files[@]}"; then
 fi
 
 actual_hosts="$(rg -o 'https://[A-Za-z0-9.-]+' "${runtime_files[@]}" | sed 's#^[^:]*:##' | sort -u)"
-expected_hosts="$(printf '%s
-'   'https://api.open-meteo.com'   'https://geocoding-api.open-meteo.com'   'https://wttr.in')"
+expected_hosts="$(printf '%s\n' \
+  'https://air-quality-api.open-meteo.com' \
+  'https://api.open-meteo.com' \
+  'https://geocoding-api.open-meteo.com' \
+  'https://wttr.in')"
 if [[ "$actual_hosts" != "$expected_hosts" ]]; then
   printf 'ERROR: runtime network allowlist mismatch.
 Expected:

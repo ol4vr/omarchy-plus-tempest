@@ -48,6 +48,7 @@ BarWidget {
 
   readonly property string iconText: panelLoader.item ? (panelLoader.item.label || "") : ""
   readonly property string tempText: panelLoader.item ? (panelLoader.item.barTemp || "") : ""
+  readonly property string hoverSummary: panelLoader.item ? (panelLoader.item.hoverSummary || "") : ""
   readonly property string displayText: (iconText && tempText) ? (iconText + "  " + tempText) : (tempText || iconText)
   readonly property var verticalLines: {
     var parts = []
@@ -84,7 +85,7 @@ BarWidget {
     hasVisualContent: root.displayText !== ""
     fixedHeight: root.vertical ? root.verticalLines.length * Style.bar.iconSlot : -1
     horizontalMargin: 8.75
-    tooltipText: ""
+    tooltipText: root.hoverSummary
 
     onPressed: function(b) {
       if (!root.bar) return
