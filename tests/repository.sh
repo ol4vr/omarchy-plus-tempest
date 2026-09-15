@@ -12,7 +12,7 @@ repo = Path(sys.argv[1])
 manifest = json.loads((repo / "manifest.json").read_text(encoding="utf-8"))
 assert manifest["schemaVersion"] == 1
 assert manifest["id"] == "io.github.ol4vr.tempest"
-assert manifest["version"] == "1.1.1"
+assert manifest["version"] == "1.1.2"
 assert manifest["author"] == "Olav Rorvik (ol4vr)"
 assert manifest["entryPoints"]["barWidget"] == "BarWidget.qml"
 assert manifest["barWidget"]["allowMultiple"] is False
@@ -24,7 +24,29 @@ readme = (repo / "README.md").read_text(encoding="utf-8")
 assert 'moduleName: "io.github.ol4vr.tempest"' in bar
 assert 'moduleName: "io.github.ol4vr.tempest"' in panel
 assert 'ipcTarget: "io.github.ol4vr.tempest"' in panel
-assert 'tooltipText: root.hoverSummary' in bar
+assert 'typeof root.bar.setCenterHoverRevealSuppressed === "function"' in panel
+assert 'root.bar.setCenterHoverRevealSuppressed(value)' in panel
+close_start = panel.index("  function close() {")
+close_end = panel.index("\n  }\n\n  function toggle()", close_start)
+close_block = panel[close_start:close_end]
+assert close_block.index("root.controller.hide()") < close_block.index("setCenterHoverRevealSuppressed(false)")
+assert 'tooltipText: ""' in bar
+assert 'import "Model.js" as Model' in bar
+assert "PopupWindow {" in bar
+assert 'id: weatherTooltipWindow' in bar
+assert 'color: root.bar ? root.bar.background : "#1A1B26"' in bar
+assert "adjustment: PopupAdjustment.Slide" in bar
+assert "edges: Edges.Top | Edges.Left" in bar
+assert "gravity: Edges.Bottom | Edges.Right" in bar
+assert "onAnchoring:" in bar
+assert "var localX = button.width / 2 - popupWidth / 2" in bar
+assert "window.contentItem.mapFromItem(button, localX, localY)" in bar
+assert "implicitWidth: Math.ceil(weatherTooltipBubble.implicitWidth)" in bar
+assert "radius: 0" in bar
+assert "Controls.ToolTip {" not in bar
+assert "import QtQuick.Controls as Controls" not in bar
+assert "TEMPEST_TOOLTIP_GEOMETRY" not in bar
+assert "Model.semanticHex(modelData.level)" in bar
 assert 'icon: ""' in panel
 assert 'icon: ""' in panel
 assert 'icon: ""' in panel

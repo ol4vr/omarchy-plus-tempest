@@ -46,9 +46,11 @@ Panel {
   }
 
   function close() {
-    setCenterHoverRevealSuppressed(false)
-    if (root.editingLocation) root.cancelEditingLocation()
+    // Release the full-screen input surface before optional cleanup. A host
+    // API failure must never leave KeyboardPanel mapped over the session.
     root.controller.hide()
+    if (root.editingLocation) root.cancelEditingLocation()
+    setCenterHoverRevealSuppressed(false)
   }
 
   function toggle() {
@@ -63,8 +65,15 @@ Panel {
   }
 
   function setCenterHoverRevealSuppressed(value) {
-    if (root.bar && "centerHoverRevealSuppressed" in root.bar)
-      root.bar.centerHoverRevealSuppressed = value
+    if (!root.bar) return
+    try {
+      if (typeof root.bar.setCenterHoverRevealSuppressed === "function")
+        root.bar.setCenterHoverRevealSuppressed(value)
+      else if ("centerHoverRevealSuppressed" in root.bar)
+        root.bar.centerHoverRevealSuppressed = value
+    } catch (error) {
+      console.warn("[Tempest] Unable to update center hover reveal suppression:", error)
+    }
   }
 
   // Parsed wttr.in j1 response. Kept on failure so stale data stays visible.
@@ -161,6 +170,7 @@ Panel {
   readonly property string reportWind:      current ? (useImperial ? (current.windspeedMiles + " mph") : (current.windspeedKmph + " km/h")) : ""
   readonly property string reportHumidity:  current ? (current.humidity + "%") : ""
   readonly property string reportVisibility: openMeteoCurrent && openMeteoCurrent.visibilityKm !== "" ? (openMeteoCurrent.visibilityKm + " km") : ""
+  readonly property var hoverItems: Model.hoverItems(current, hourlyForecast, airQuality, pollen, useImperial)
   readonly property string hoverSummary: Model.hoverSummary(current, hourlyForecast, airQuality, pollen, useImperial)
   readonly property var detailItems: [
     { icon: "", label: "SUNRISE", value: dayDetails.sunrise || "—", level: "neutral" },

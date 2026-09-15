@@ -303,6 +303,15 @@ function airQualityLevel(value) {
   return "danger"
 }
 
+function temperatureLevel(celsius) {
+  var value = finiteNumber(celsius)
+  if (value === null) return "neutral"
+  if (value <= 5) return "fair"
+  if (value <= 15) return "good"
+  if (value <= 23) return "warning"
+  return "danger"
+}
+
 function semanticHex(level) {
   if (level === "good") return "#8FCB9B"
   if (level === "fair") return "#7AA2F7"
@@ -312,7 +321,7 @@ function semanticHex(level) {
 }
 
 function tooltipPart(icon, label, value, level) {
-  return '<font color="' + semanticHex(level) + '">' + icon + ' <b>' + label + '</b> ' + value + '</font>'
+  return { icon: icon, label: label, value: value, level: level }
 }
 
 function airQualitySummary(report) {
@@ -365,20 +374,26 @@ function pollenItems(report, hours) {
   return out
 }
 
-function hoverSummary(current, hourlyRows, airQuality, pollen, useImperial) {
+function hoverItems(current, hourlyRows, airQuality, pollen, useImperial) {
   var parts = []
   if (current) {
     var temp = useImperial ? current.temp_F : current.temp_C
     var feels = useImperial ? current.FeelsLikeF : current.FeelsLikeC
     var icon = currentIcon(current, "󰔏")
-    if (temp !== undefined && temp !== null && temp !== "") parts.push(tooltipPart(icon, "Temperature", temp + "°" + (useImperial ? "F" : "C"), "fair"))
-    if (feels !== undefined && feels !== null && feels !== "") parts.push(tooltipPart("", "Feels", feels + "°", "neutral"))
+    if (temp !== undefined && temp !== null && temp !== "") parts.push(tooltipPart(icon, "Temperature", temp + "°" + (useImperial ? "F" : "C"), temperatureLevel(current.temp_C)))
+    if (feels !== undefined && feels !== null && feels !== "") parts.push(tooltipPart("", "Feels", feels + "°", temperatureLevel(current.FeelsLikeC)))
   }
   var rain = maxHourlyNumber(hourlyRows, "precipitationProbability", 3)
   if (rain !== null) parts.push(tooltipPart("󰖗", "Rain", Math.round(rain) + "%", weatherMetricLevel("rain", rain)))
   if (airQuality && airQuality.category) parts.push(tooltipPart("󰌪", "Air", airQuality.category, airQuality.level || "neutral"))
   if (pollen && pollen.length > 0) parts.push(tooltipPart("", "Pollen", pollen[0].label, pollen[0].level || "warning"))
-  return parts.join(" · ")
+  return parts
+}
+
+function hoverSummary(current, hourlyRows, airQuality, pollen, useImperial) {
+  return hoverItems(current, hourlyRows, airQuality, pollen, useImperial).map(function(part) {
+    return part.icon + " " + part.label + " " + part.value
+  }).join(" · ")
 }
 
 function normalizedUnit(value) {
@@ -582,9 +597,11 @@ if (typeof module !== "undefined") {
     weatherHighlights: weatherHighlights,
     airQualityCategory: airQualityCategory,
     airQualityLevel: airQualityLevel,
+    temperatureLevel: temperatureLevel,
     semanticHex: semanticHex,
     airQualitySummary: airQualitySummary,
     pollenItems: pollenItems,
+    hoverItems: hoverItems,
     hoverSummary: hoverSummary,
     normalizedUnit: normalizedUnit,
     localeUsesImperial: localeUsesImperial,

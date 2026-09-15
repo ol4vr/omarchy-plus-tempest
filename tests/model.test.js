@@ -126,12 +126,35 @@ assert.deepEqual(model.pollenItems(air, 24), [
   { label: "Birch", current: "12.4", peak: "18.2", trend: "Rising", level: "warning" },
   { label: "Grass", current: "4", peak: "6", trend: "Rising", level: "warning" },
 ]);
+assert.equal(model.temperatureLevel(-10), "fair");
+assert.equal(model.temperatureLevel(5), "fair");
+assert.equal(model.temperatureLevel(6), "good");
+assert.equal(model.temperatureLevel(15), "good");
+assert.equal(model.temperatureLevel(16), "warning");
+assert.equal(model.temperatureLevel(23), "warning");
+assert.equal(model.temperatureLevel(24), "danger");
+assert.equal(model.temperatureLevel(null), "neutral");
+assert.equal(model.temperatureLevel("invalid"), "neutral");
+
+const tooltipItems = model.hoverItems(extendedCurrent, hours, model.airQualitySummary(air), model.pollenItems(air, 24), false);
+assert.deepEqual(tooltipItems.map((item) => ({ label: item.label, value: item.value, level: item.level })), [
+  { label: "Temperature", value: "10°C", level: "good" },
+  { label: "Feels", value: "8°", level: "good" },
+  { label: "Rain", value: "45%", level: "fair" },
+  { label: "Air", value: "Good", level: "good" },
+  { label: "Pollen", value: "Birch", level: "warning" },
+]);
+assert.equal(model.semanticHex("good"), "#8FCB9B");
+assert.equal(model.semanticHex("fair"), "#7AA2F7");
+assert.equal(model.semanticHex("warning"), "#E0AF68");
+assert.equal(model.semanticHex("danger"), "#F7768E");
+assert.equal(model.semanticHex("neutral"), "#A9B1D6");
 const tooltip = model.hoverSummary(extendedCurrent, hours, model.airQualitySummary(air), model.pollenItems(air, 24), false);
-assert.match(tooltip, /<font color="#7AA2F7">/);
-assert.match(tooltip, /<b>Temperature<\/b> 10°C/);
-assert.match(tooltip, /<b>Feels<\/b> 8°/);
-assert.match(tooltip, /<b>Rain<\/b> 45%/);
-assert.match(tooltip, /<b>Air<\/b> Good/);
-assert.match(tooltip, /<b>Pollen<\/b> Birch/);
+assert.match(tooltip, /Temperature 10°C/);
+assert.match(tooltip, /Feels 8°/);
+assert.match(tooltip, /Rain 45%/);
+assert.match(tooltip, /Air Good/);
+assert.match(tooltip, /Pollen Birch/);
+assert.doesNotMatch(tooltip, /<[^>]+>/);
 
 console.log("Model tests: PASS");
